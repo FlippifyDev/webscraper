@@ -1,5 +1,5 @@
 # Local Imports
-from src.processors import *
+from .src.processors import *
 
 from bs4 import BeautifulSoup
 
