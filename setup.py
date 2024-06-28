@@ -1,9 +1,9 @@
 from setuptools import setup, find_packages
 
 setup(
-    name='your_project_name',
-    version='0.1.0',
-    description='A brief description of your project',
+    name='webscraper',
+    version='0.1.1',
+    description='Web Scraper designed to scrape any website',
     long_description=open('README.md').read(),
     long_description_content_type='text/markdown',
     url='https://github.com/FLippifyDev/webscraper',
@@ -12,8 +12,10 @@ setup(
     license='MIT',
     packages=find_packages(),
     install_requires=[
-        # List your project's dependencies here
-        # Example: 'numpy', 'requests',
+        "aiohttp",
+        "beautifulsoup4",
+        "fake_headers",
+        "setuptools"
     ],
     classifiers=[
         'Programming Language :: Python :: 3',
