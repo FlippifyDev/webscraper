@@ -1,6 +1,6 @@
 # Local Imports
 from .web_request import aiohttp_fetch
-from src.batched_queue import BatchedQueue
+from .batched_queue import BatchedQueue
 
 from collections import defaultdict
 from urllib.parse import urlparse, urlunparse, urljoin
