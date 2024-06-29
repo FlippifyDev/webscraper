@@ -62,7 +62,8 @@ def scrape(*args):
 
             # Scrape the elements based on the configuration
             for item_name, item_config in items_config.items():
-                scraped_data[url].update(scrape_element_config_list(html, item_name, item_config, root_url))
+                item_config_copy = copy.deepcopy(item_config)
+                scraped_data[url].update(scrape_element_config_list(html, item_name, item_config_copy, root_url))
         
     except Exception as error:
         scraped_data = {url: {"error": str(error)}}
