@@ -26,57 +26,7 @@ async def aiohttp_request(urls):
 
 
 
-def setup_scraping_config(scraping_config):
-    """
-    Splits the scraping config into item-locate and item-page
-    """
-    try:
-        locate_config = {}
-        page_config = {}
-
-        for config_dict in scraping_config:
-            root =            config_dict.get("root")
-            search_command =  config_dict.get("search-command")
-            config =          config_dict.get("scraping-config")
-            website_name =    extract_website_name_from_url(root)
-            
-            # Extracting item-locate and item-page
-            item_locate =  config.get("item-locate")
-            item_page =    config.get("item-page")
-
-            # Creating dictionaries with root, search-command, and type
-            locate_config[website_name] = {"root": root, "search-command": search_command, "type": config_dict.get("type"), "scraping-config": item_locate}
-            page_config[website_name] =   {"root": root, "search-command": search_command, "type": config_dict.get("type"), "scraping-config": item_page}
-
-
-        return locate_config, page_config
-    
-    except Exception as error:
-        print("setup_scraping_config", error)
-
-
-
-def extract_url_type(url, scraping_config):
-    """
-    Check if the search command is in the url, if it is then the url is a locate-url
-    if it isn't then the url is a page-url
-    """
-    try: 
-        website_name = extract_website_name_from_url(url)
-        search_command = scraping_config.get(website_name, {}).get("search-command")
-
-        if search_command is not None:
-            if search_command in url:
-                return "locate"
-            else:
-                return "page"
-
-    except Exception as error:
-        print("extract_url_type", error)
-
-
-
-def order_urls(urls, locate_config, batch_size):
+def order_urls(urls, batch_size):
     """
     Orders a list of urls such that the urls from the same website are as far apart as possible. 
     For example if you have 6 urls from 3 different websites, the list will be order as below:
@@ -93,32 +43,22 @@ def order_urls(urls, locate_config, batch_size):
             return urls
 
         # Create a dictionary to group URLs by domain
-        locate_url_groups = defaultdict(list)
-        page_url_groups = defaultdict(list)
-
+        url_groups = defaultdict(list)
 
         for url in urls:
-            domain = url.split('/')[2]  # Extracting domain from the URL
-            
-            url_type = extract_url_type(url, locate_config)
-            if url_type == "locate":
-                locate_url_groups[domain].append(url)
-            elif url_type == "page":
-                page_url_groups[domain].append(url)
-                
+            domain = url.split('/')[2]  # Extract domain from the url
+            url_groups[domain].append(url)
+        
         # Sort the groups based on the count of URLs in each group
-        sorted_locate_groups = sorted(locate_url_groups.values(), key=len, reverse=True)
-        sorted_page_groups = sorted(page_url_groups.values(), key=len, reverse=True)
-
+        sorted_groups = sorted(url_groups.values(), key=len, reverse=True)
         
         # Interleave the groups to form the ordered list
-        locate_urls = [url for i in range(max(map(len, sorted_locate_groups))) for group in sorted_locate_groups for url in group[i:i+1]]
-        page_urls =   [url for i in range(max(map(len, sorted_page_groups))) for group in sorted_page_groups for url in group[i:i+1]]
+        ordered_urls = [url for i in range(max(map(len, sorted_groups))) for group in sorted_groups for url in group[i:i+1]]
 
-        return BatchedQueue(locate_urls, batch_size), BatchedQueue(page_urls, batch_size)
+        return BatchedQueue(ordered_urls, batch_size)
 
     except Exception as error:
-        print("order_urls", error)
+        print("Couldn't process urls", error)
 
 
 
@@ -136,6 +76,19 @@ def extract_website_name_from_url(url):
 
     except Exception as error:
         print("extract_website_name_from_url", error)
+
+
+
+def extract_base_url_from_url(url):
+    try:
+        # Parse the URL
+        parsed_url = urlparse(url)
+        # Construct the base URL
+        base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
+        return base_url
+    except Exception as error:
+        print("extract_base_url_from_url error:", error)
+        return None
 
 
 

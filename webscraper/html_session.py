@@ -5,74 +5,41 @@ from bs4 import BeautifulSoup
 
 import concurrent.futures
 import time
+import copy
 
 
 
-async def run(urls, scraping_config, batch_size=10):
-    try:
-        # Split the scraping config into the config data for locating items
-        # and the config data for scraping the item pages
-        locate_config, page_config = setup_scraping_config(scraping_config)
-        
-        # Split the urls into item locate urls and item page urls
-        locate_urls, page_urls = order_urls(urls, locate_config, batch_size)
-        
-        # Scrape all the item for the given locate_urls
-        located_items = await scrape_batches(locate_urls, locate_config)
-
-        # Scrape all the item for the given locate_urls
-        page_items = await scrape_batches(page_urls, page_config)
-
-        return {"item-page": page_items, "item-locate": located_items}
-
-    except Exception as error:
-        print("run", error)
-
-
-
-async def scrape_batches(queue, scraping_config, batch_delay_seconds=5):
-    """
-    This function is designed to be an asynchronous task that continuously pops batches of URLs
-    from the provided BatchedQueue and sends requests to the urls asynchronously using aiohttp.
-    A delay is introduced between each batch processing cycle to control the rate of URL processing.
-    The responses from asynchronous requests are then handed off to a ThreadPoolExecutor for
-    parallelized CPU-bound scraping tasks, performed by the 'scrape' function.
-
-    Args:
-        queue (BatchedQueue): An instance of BatchedQueue containing URLs to be processed.
-        batch_delay_seconds (int, optional): The delay in seconds between processing batches. Default is 10 seconds.
-
-    Returns:
-        List: A list containing the results collected by the 'scrape' function for each processed batch.
-    """
+def run(urls, scraping_config, batch_size=10, batch_delay_seconds=5):
+    queue = order_urls(urls, batch_size)
     results = {}
     try:
-        # Continuously process batches until the queue is empty
+        # Process each batch of urls until the queue is empty
         while queue.length > 0:
             batch_urls = queue.pop()
+            
+            # Send asynchronous requests to the urls in the current batch
+            responses = asyncio.run(aiohttp_request(batch_urls))
 
-            responses = await aiohttp_request(batch_urls)
+            # Prepare arguments for the scrape function
+            scrape_args = [
+                (scraping_config[extract_website_name_from_url(url)], response, url)
+                for response, url in zip(responses, batch_urls)
+            ]
 
-            # Prepare the arguments for the scrape function
-            scrape_args = []
-            for response, url in zip(responses, batch_urls):
-                website_name = extract_website_name_from_url(url)
-                config = scraping_config.get(website_name)
-                scrape_args.append((config, response, url))
-
-            # Use ThreadPoolExecutor to parallelize the CPU-bound scraping task
+            # Use ThreadPoolExecutor to parallelize the scraping task
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 batch_results = list(executor.map(lambda args: scrape(*args), scrape_args))
 
+            # Update the results with the batch results
             for result in batch_results:
                 results.update(result)
 
+            # Introduce a delay between processing batches
             if queue.length > 0:
                 time.sleep(batch_delay_seconds)
 
-
     except Exception as error:
-        print("scrape_batches", error)
+        print("scrape_batches:", error)
     
     finally:
         return results
@@ -80,19 +47,22 @@ async def scrape_batches(queue, scraping_config, batch_delay_seconds=5):
 
 
 def scrape(*args):
-    # scraped_data = {"url1": {"key1": "data1", "key2": "data2"}}
-    scraped_data = {}
-    try:
-        config, response, url = args
+    website_config, response, url = args
+    scraped_data = {url: {}}
 
+    try:
         # When a request has faild the status is returned
         if isinstance(response, dict):
-            scraped_data = {url: {"status": response.get("status")}}
+            scraped_data[url]["status"] = response.get("status")
+        else:
+            # Parse the HTML content
+            html = BeautifulSoup(response, "lxml")
+            root_url = extract_base_url_from_url(url)
+            items_config = website_config["config"]
 
-        html = BeautifulSoup(response, "lxml")
-        
-        scraped_data[url] = scrape_item(html, config.get("scraping-config"), config.get("root"))
-
+            # Scrape the elements based on the configuration
+            for item_name, item_config in items_config.items():
+                scraped_data[url].update(scrape_element_config_list(html, item_name, item_config, root_url))
         
     except Exception as error:
         scraped_data = {url: {"error": str(error)}}
@@ -103,86 +73,102 @@ def scrape(*args):
 
 
 
-def scrape_item(html, config, root_url):
+def scrape_element_config_list(html, item_name, item_config, root_url):
     scraped_data = {}
+
     try:
-        root_item_name = config.get("item")
-        item_elements = scrape_config(html, config)
-        item_attr_type = config.get("config")[-1].get("attr")
+        element_config = item_config.pop("element-config")
 
-        # The attribute type is describing what value to scrape from an element
-        # for example the elements text, href, src etc.
-        # If it doesn't exist in the config then the item has sub-items
-        if item_attr_type is None:
-            scraped_data[root_item_name] = []
-            for element in item_elements:
-                element_data = {}
+        # Iterate through the config data and scrape the HTML for the element
+        for config in element_config:
+            if html is None:
+                return
+            
+            html = scrape_element_config_item(html, config)
 
-                # Iterate through the sub-items and scrape their data
-                for sub_item in config.get("sub-items"):
-                    sub_item_name = sub_item.get("item")
-                    element_data[sub_item_name] = scrape_item(element, sub_item, root_url)
-
-                scraped_data[root_item_name].append(element_data)
-
-        elif item_attr_type == ".text":
-            scraped_data = item_elements[0].get_text(strip=True)
-        
-        elif item_attr_type in ["href", "src"]: 
-            scraped_data = fix_url(item_elements[0][item_attr_type], root_url)
+        if isinstance(html, list):
+            scraped_data[item_name] = handle_multiple_elements(html, item_config, root_url)
+        elif html is None:
+            scraped_data = None 
         else:
-            scraped_data = item_elements[0][item_attr_type]
+            scraped_data[item_name] = extract_element_data(html, config.get("attr"), root_url)
 
     except Exception as error:
-        print("scrape_item", error)
+        print("scrape_element_config_list", error)
 
     finally:
         return scraped_data
+
+
+
+def scrape_element_config_item(html, config):
+    try:
+        # Get the number of tags to scrape
+        max_elements = config.get("max")
+        
+        # Get the parameters for the BeautifulSoup find methods
+        soup_params = get_soup_params(config)
+        
+        if max_elements is None:
+            # Scrape for a single item
+            return html.find(*soup_params)
+        else:
+            # Scrape for multiple items
+            return html.find_all(*soup_params, limit=max_elements)
+
+    except Exception as error:
+        print("scrape_element_config_item:", error)
+
+
+
+def handle_multiple_elements(html, item_config, root_url):
+    scraped_data = []
+
+    try:
+        # Iterate over each HTML element in the list
+        for element in html:
+            sub_item_data = {}
+            item_config_copy = copy.deepcopy(item_config)
+
+            # Iterate over each sub-item config
+            for sub_item_name, sub_item_config in item_config_copy.items():
+                # Scrape data for each sub-item and update sub_item_data
+                sub_item_data.update(scrape_element_config_list(element, sub_item_name, sub_item_config, root_url))
+            
+            # Append the scraped data for the current element to scraped_data list
+            scraped_data.append(sub_item_data)
     
+    except Exception as error:
+        print("Error", error)   
+
+    finally:
+        return scraped_data
 
 
-def get_element_config(element):
-    # The tag, and attributes for the element
-    tag = element["tag"]
-    attr_name, attr_value = list(element.items())[1]
+
+def extract_element_data(html, attribute, root_url):
+    try:
+        # Extract text content if attribute is ".text"
+        if attribute == ".text":
+            return html.get_text(strip=True)
+        
+        # Fix and return urls for "href" or "src" attributes
+        elif attribute in ["href", "src"]:
+            return fix_url(html[attribute], root_url)
+        
+        # Return the value of the specified attribute
+        else:
+            return html[attribute]
+
+    except Exception as error:
+        print("extract_element_data:", error)
+
+
+
+def get_soup_params(config):
+    # Extract tag name and attributes from the config dictionary
+    tag = config["tag"]
+    attr_name, attr_value = list(config.items())[1]
     attrs = {attr_name: attr_value}
 
     return tag, attrs
-
-
-
-def scrape_config(html, config):
-    """
-    Loops through the config list and scrapes the elements. 
-    If the config dict contains a max-items key then the last item in the config list
-    will be scraped for this many times.
-
-    Args:
-        html (Beautifulsoup): HTML the elements will be scraped from
-        config (list): The config information for how to locate an element
-
-    Returns:
-        html (list[Beautifulsoup] | None): The final scraped element(s). Returns None if element not found.
-    """
-    try:
-        element_config = config.get("config")
-        max_items = config.get("max-items")
-        
-        for element in element_config[:-1]:
-            html = html.find(*get_element_config(element))
-            if html is None: 
-                return None
-        
-        last_element_config = get_element_config(element_config[-1])
-        if max_items is not None:
-            elements = html.find_all(*last_element_config, limit=max_items)
-        else:
-            elements = [html.find(*last_element_config)]
-
-
-    except Exception as error:
-        print("scrape_config", error)
-        elements = None
-
-    finally:
-        return elements
