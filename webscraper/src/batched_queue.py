@@ -4,6 +4,7 @@ class BatchedQueue:
         self.batch_size = batch_size
         self.queue = self.__create_queue_batches()
         self.length = len(self.queue)
+        self.size = self.length
         
         self.batch_number = 1
 

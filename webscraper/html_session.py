@@ -1,12 +1,17 @@
 # Local Imports
 from .src.processors import *
+from .src.web_request import aiohttp_request
+from .src.config_logger import setup_logger
 
 from bs4 import BeautifulSoup
 
 import concurrent.futures
+import asyncio
 import time
 import copy
 
+
+logger = setup_logger("SCRAPER", "bot")
 
 
 def run(urls, scraping_config, batch_size=10, batch_delay_seconds=5):
@@ -15,6 +20,8 @@ def run(urls, scraping_config, batch_size=10, batch_delay_seconds=5):
     try:
         # Process each batch of urls until the queue is empty
         while queue.length > 0:
+            logger.info(f"Batch {queue.batch_number}/{queue.size}")
+            
             batch_urls = queue.pop()
             
             # Send asynchronous requests to the urls in the current batch
@@ -39,7 +46,7 @@ def run(urls, scraping_config, batch_size=10, batch_delay_seconds=5):
                 time.sleep(batch_delay_seconds)
 
     except Exception as error:
-        print("scrape_batches:", error)
+        logger.error(error)
     
     finally:
         return results
@@ -67,7 +74,7 @@ def scrape(*args):
         
     except Exception as error:
         scraped_data = {url: {"error": str(error)}}
-        print("scrape", error)
+        logger.error(error)
 
     finally:
         return scraped_data
@@ -95,7 +102,7 @@ def scrape_element_config_list(html, item_name, item_config, root_url):
             scraped_data[item_name] = extract_element_data(html, config.get("attr"), root_url)
 
     except Exception as error:
-        print("scrape_element_config_list", error)
+        logger.error(error)
 
     finally:
         return scraped_data
@@ -118,7 +125,7 @@ def scrape_element_config_item(html, config):
             return html.find_all(*soup_params, limit=max_elements)
 
     except Exception as error:
-        print("scrape_element_config_item:", error)
+        logger.error(error)
 
 
 
@@ -140,7 +147,7 @@ def handle_multiple_elements(html, item_config, root_url):
             scraped_data.append(sub_item_data)
     
     except Exception as error:
-        print("Error", error)   
+        logger.error(error) 
 
     finally:
         return scraped_data
@@ -162,7 +169,7 @@ def extract_element_data(html, attribute, root_url):
             return html[attribute]
 
     except Exception as error:
-        print("extract_element_data:", error)
+        logger.error(error)
 
 
 
