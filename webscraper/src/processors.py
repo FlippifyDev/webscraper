@@ -48,6 +48,8 @@ def extract_website_name_from_url(url):
     """
     Extracts the website name from a url
     """
+    website_name = "error-in-extracting-website-name"
+
     try:
         domain = urlparse(url).netloc
         # Split the domain into subdomains and domain parts
@@ -58,7 +60,6 @@ def extract_website_name_from_url(url):
 
     except Exception as error:
         logger.error(error)
-        website_name = "error-in-extracting-website-name"
 
     finally:
         return website_name
@@ -66,6 +67,8 @@ def extract_website_name_from_url(url):
 
 
 def extract_base_url_from_url(url):
+    base_url = "https://error-in-extracting-base-url"
+
     try:
         # Parse the URL
         parsed_url = urlparse(url)
@@ -74,7 +77,6 @@ def extract_base_url_from_url(url):
 
     except Exception as error:
         logger.error(error)
-        base_url = "https://error-in-extracting-base-url"
 
     finally:
         return base_url
@@ -86,6 +88,8 @@ def fix_url(url, root_url):
     Some links retrieved from <a> tags don't include the root url, this function
     fixes this but adding the root to the url
     """
+    valid_url = "https://error-in-fixing-url"
+
     try:
         # Check if the URL is valid
         if urlparse(url).scheme and urlparse(url).netloc:
@@ -114,7 +118,6 @@ def fix_url(url, root_url):
 
     except Exception as error:
         logger.error(error)
-        valid_url = "https://error-in-fixing-url"
 
     finally:
         return valid_url
