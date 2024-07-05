@@ -1,8 +1,8 @@
 # Local Imports
 from .batched_queue import BatchedQueue
 
-from collections import defaultdict
 from urllib.parse import urlparse, urlunparse, urljoin
+from collections import defaultdict
 
 import logging
 
@@ -84,40 +84,30 @@ def extract_base_url_from_url(url):
 
 
 def fix_url(url, root_url):
-    """
-    Some links retrieved from <a> tags don't include the root url, this function
-    fixes this but adding the root to the url
-    """
-    valid_url = "https://error-in-fixing-url"
-
     try:
-        # Check if the URL is valid
-        if urlparse(url).scheme and urlparse(url).netloc:
+        # Parse the root URL
+        parsed_root = urlparse(root_url)
+        
+        # Parse the URL to fix
+        parsed_url = urlparse(url)
+        
+        # If the URL is already valid (contains scheme and netloc), return it as-is
+        if parsed_url.scheme and parsed_url.netloc:
             return url
-
-        # If not valid, make it valid using the base_url
-        parsed_base_url = urlparse(root_url)
-        scheme = parsed_base_url.scheme
-        netloc = parsed_base_url.netloc
-
-        # Handle URLs starting with "//"
+        
+        # Handle URLs starting with '//'
         if url.startswith('//'):
-            return urlunparse((scheme, url[2:], '', '', '', ''))
-
-        # Handle relative paths and absolute paths
+            return urlunparse((parsed_root.scheme, url[2:], parsed_url.path, parsed_url.params, parsed_url.query, parsed_url.fragment))
+        
+        # Handle absolute paths
         if url.startswith('/'):
-            # Handle absolute paths
-            path = url
-        else:
-            # Handle relative paths and join them with the base_url
-            path = urljoin(root_url, url)
-
-        # Construct the valid URL
-        valid_url = urlunparse((scheme, netloc, path, '', '', ''))
-
-
-    except Exception as error:
-        logger.error(error)
-
-    finally:
-        return valid_url
+            return urlunparse((parsed_root.scheme, parsed_root.netloc, url, parsed_url.params, parsed_url.query, parsed_url.fragment))
+        
+        # Handle relative paths
+        fixed_url = urljoin(root_url, url)
+        
+        return fixed_url
+    
+    except Exception as e:
+        print(f"Error fixing URL: {e}")
+        return None
