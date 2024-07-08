@@ -6,6 +6,7 @@ import asyncio
 
 logger = logging.getLogger("SCRAPER")
 
+
 def headers():
     """
     Generate random headers

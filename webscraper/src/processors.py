@@ -109,5 +109,5 @@ def fix_url(url, root_url):
         return fixed_url
     
     except Exception as e:
-        print(f"Error fixing URL: {e}")
+        logger.error(f"Error fixing URL: {e}")
         return None
