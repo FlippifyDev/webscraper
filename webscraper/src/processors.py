@@ -84,6 +84,8 @@ def extract_base_url_from_url(url):
 
 
 def fix_url(url, root_url):
+    base_url = "https://error-in-fixing-url"
+
     try:
         # Parse the root URL
         parsed_root = urlparse(root_url)
@@ -110,4 +112,4 @@ def fix_url(url, root_url):
     
     except Exception as e:
         logger.error(f"Error fixing URL: {e}")
-        return None
+        return base_url
