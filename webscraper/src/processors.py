@@ -1,7 +1,7 @@
 # Local Imports
 from .batched_queue import BatchedQueue
 
-from urllib.parse import urlparse, urlunparse, urljoin
+from urllib.parse import urlparse, urlunparse, urljoin, parse_qs, urlencode
 from collections import defaultdict
 
 import logging
@@ -89,27 +89,64 @@ def fix_url(url, root_url):
     try:
         # Parse the root URL
         parsed_root = urlparse(root_url)
-        
+
         # Parse the URL to fix
         parsed_url = urlparse(url)
-        
+
         # If the URL is already valid (contains scheme and netloc), return it as-is
         if parsed_url.scheme and parsed_url.netloc:
             return url
-        
+
         # Handle URLs starting with '//'
-        if url.startswith('//'):
-            return urlunparse((parsed_root.scheme, url[2:], parsed_url.path, parsed_url.params, parsed_url.query, parsed_url.fragment))
-        
+        if url.startswith("//"):
+            return urlunparse(
+                (
+                    parsed_root.scheme,
+                    parsed_url.netloc,
+                    parsed_url.path,
+                    parsed_url.params,
+                    parsed_url.query,
+                    parsed_url.fragment,
+                )
+            )
+
         # Handle absolute paths
-        if url.startswith('/'):
-            return urlunparse((parsed_root.scheme, parsed_root.netloc, url, parsed_url.params, parsed_url.query, parsed_url.fragment))
-        
+        if url.startswith("/"):
+            return urlunparse(
+                (
+                    parsed_root.scheme,
+                    parsed_root.netloc,
+                    parsed_url.path,
+                    parsed_url.params,
+                    parsed_url.query,
+                    parsed_url.fragment,
+                )
+            )
+
         # Handle relative paths
         fixed_url = urljoin(root_url, url)
-        
-        return fixed_url
-    
+
+        # Parse the fixed URL to merge query parameters
+        parsed_fixed_url = urlparse(fixed_url)
+        root_query_params = parse_qs(parsed_root.query)
+        url_query_params = parse_qs(parsed_url.query)
+
+        # Merge query parameters, with URL's query parameters taking precedence
+        merged_query_params = {**root_query_params, **url_query_params}
+        merged_query = urlencode(merged_query_params, doseq=True)
+
+
+        return urlunparse(
+            (
+                parsed_fixed_url.scheme,
+                parsed_fixed_url.netloc,
+                parsed_fixed_url.path,
+                parsed_fixed_url.params,
+                merged_query,
+                parsed_fixed_url.fragment,
+            )
+        )
+
     except Exception as e:
-        logger.error(f"Error fixing URL: {e}")
+        print(f"Error fixing URL: {e}")
         return base_url
