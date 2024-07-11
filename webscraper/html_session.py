@@ -66,6 +66,8 @@ def scrape(*args):
             html = BeautifulSoup(response, "lxml")
             root_url = extract_base_url_from_url(url)
             items_config = website_config["config"]
+            if items_config is None:
+                return scraped_data
 
             # Scrape the elements based on the configuration
             for item_name, item_config in items_config.items():
@@ -125,7 +127,7 @@ def scrape_element_config_item(html, config):
             return html.find_all(*soup_params, limit=max_elements)
 
     except Exception as error:
-        logger.error(error)
+        logger.error(f"Config: {config} |", error) 
 
 
 
@@ -147,7 +149,7 @@ def handle_multiple_elements(html, item_config, root_url):
             scraped_data.append(sub_item_data)
     
     except Exception as error:
-        logger.error(error) 
+        logger.error(f"Config: {item_config} |", error) 
 
     finally:
         return scraped_data
@@ -169,7 +171,7 @@ def extract_element_data(html, attribute, root_url):
             return html[attribute]
 
     except Exception as error:
-        logger.error(error)
+        logger.error(f"Attr: {attribute} | html: {html} |", error) 
 
 
 
