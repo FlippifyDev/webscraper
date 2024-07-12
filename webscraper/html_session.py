@@ -99,7 +99,7 @@ def scrape_element_config_list(html, item_name, item_config, root_url):
         if isinstance(html, list):
             scraped_data[item_name] = handle_multiple_elements(html, item_config, root_url)
         elif html is None:
-            scraped_data = None 
+            scraped_data = {} 
         else:
             scraped_data[item_name] = extract_element_data(html, config.get("attr"), root_url)
 
