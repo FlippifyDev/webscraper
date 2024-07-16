@@ -1,20 +1,76 @@
+from urllib.parse import urlparse
 from fake_headers import Headers
+from yarl import URL
 
 import tls_client
 import logging
 import aiohttp
-import asyncio
+import pickle
+import os
+
 
 logger = logging.getLogger("SCRAPER")
 
+# Path to the cookiejar file
+COOKIEJAR_PATH = "cookies.pkl"
 
-def headers():
+
+
+def headers(gen = False):
     """
     Generate random headers
     """
-    header = Headers(headers=True).generate()
+    if gen is True:
+        return Headers(headers=True).generate()
+    return {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/png,image/svg+xml,*/*;q=0.8',
+        'Accept-Encoding': 'gzip, deflate, br, zstd',
+        'Accept-Language': 'en-GB,en;q=0.5',
+        'Host': 'duckduckgo.com',
+        'TE': 'trailers',
+        'Cookie': 'ae=d; ay=b; 5=2; t=b; a=a; 9=8ab4f8; ai=-1; aa=c58af9; 7=202124; x=8ab4f8',
+        'DNT': '1',
+        'PRIORITY': 'u=0, i',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'Sec-GPC': '1',
+        'Upgrade-Insecure-Requests': '1'
+    }
 
-    return header
+
+
+def load_cookies():
+    """
+    Load cookies from the local cookiejar file.
+    """
+    if os.path.exists(COOKIEJAR_PATH) and os.path.getsize(COOKIEJAR_PATH) > 0:
+        try:
+            with open(COOKIEJAR_PATH, "rb") as f:
+                return pickle.load(f)
+        except EOFError:
+            return {}
+    return {}
+
+
+
+def save_cookies(cookies):
+    """
+    Save cookies to the local cookiejar file.
+    """
+    with open(COOKIEJAR_PATH, "wb") as f:
+        pickle.dump(cookies, f)
+
+
+
+def get_domain(url):
+    """
+    Extract domain from URL
+    """
+    parsed_url = urlparse(url)
+    return parsed_url.netloc
 
 
 
@@ -46,24 +102,47 @@ async def check_response_status(status_code, url):
 
 async def tls_client_request(urls):
     try:
+        cookies = load_cookies()
+        responses = []
+        
         with tls_client.Session(client_identifier="chrome112", random_tls_extension_order=True) as session:
-            tasks = [await tls_client_fetch(url, session) for url in urls]
-            return tasks
-
+            for url in urls:
+                domain = get_domain(url)
+                
+                # Update cookies for the domain in tls_client session
+                session.cookies.update(cookies.get(domain, {}))
+                
+                # Make request using tls_client
+                response = await tls_client_fetch(url, session)
+                responses.append(response)
+                
+                # Update cookies after request
+                cookies[domain] = session.cookies
+                
+        # Save updated cookies to file
+        save_cookies(cookies)
+        
+        return responses
+    
     except Exception as error:
-        logger.error("Failed tls_client.Session()", error)
+        logger.error("Failed tls_client_request: %s", error)
+
 
 
 async def tls_client_fetch(url, session):
     try:
+        # Make request using tls_client, passing headers and cookies as needed
         response = session.get(url, headers=headers())
+        
+        # Handle response as needed
         status = response.status_code
         if await check_response_status(status, url):
             return response.content
         return {"status": status}
-
+    
     except Exception as error:
-        logger.error(f"Failed request for ({url})", error)
+        logger.error("Failed request for (%s): %s", url, error)
+
 
 
 async def aiohttp_request(urls):
@@ -71,13 +150,31 @@ async def aiohttp_request(urls):
     Create an aiohttp session and send requests asynchronously to each url
     """
     try:
-        async with aiohttp.ClientSession() as session:
-            tasks = [aiohttp_fetch(url, session) for url in urls]
-            # Use asyncio.gather to wait for all asynchronous requests to complete
-            return await asyncio.gather(*tasks)
+        cookies = load_cookies()
+        responses = []
+
+        # Create a new cookie jar for the session
+        cookie_jar = aiohttp.CookieJar(unsafe=True)
         
+        # Update cookies in the cookie jar for each domain
+        for domain, domain_cookies in cookies.items():
+            cookie_jar.update_cookies(domain_cookies, URL(domain))
+
+        async with aiohttp.ClientSession(cookie_jar=cookie_jar) as session:
+            for url in urls:
+                response = await aiohttp_fetch(url, session)
+                responses.append(response)
+                
+                # Update cookies for the current domain in the cookie jar
+                cookies[get_domain(url)] = session.cookie_jar.filter_cookies(url)
+
+        # Save updated cookies back to file
+        save_cookies(cookies)
+
+        return responses
+
     except Exception as error:
-        logger.error("Failed aiohttp.ClientSession()", error)
+        logger.error("Failed aiohttp.ClientSession(), %s", error)
 
 
 
@@ -87,13 +184,22 @@ async def aiohttp_fetch(url, session) -> None:
 
     Args:
         url (str): URL to fetch.
-        session (aiohttp.ClientSession | tls_client.Session): Session for the HTTP GET request.
+        session (aiohttp.ClientSession): Session for the HTTP GET request.
     
     Returns:
         Response text on success, or HTTP status code on failure.
     """
-    async with session.get(url, headers=headers()) as response:
-        status = response.status
-        if await check_response_status(status, url):
-            return await response.text()
-        return {"status": status}
+    try:
+        async with session.get(url, headers=headers(gen=True)) as response:
+            status = response.status
+            if await check_response_status(status, url):
+                try:
+                    # Attempt to get the content as text
+                    content = await response.text()
+                except UnicodeDecodeError:
+                    # Fallback to getting the content as raw bytes if decoding fails
+                    content = await response.read()
+                return content
+            return {"status": status}
+    except Exception as error:
+        logger.error("Failed request for (%s): %s", url, error)

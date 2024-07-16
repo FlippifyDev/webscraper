@@ -25,9 +25,11 @@ def run(urls, scraping_config, batch_size=10, batch_delay_seconds=5):
             batch_urls = queue.pop()
             
             batch_request_urls = filter_urls_by_website(batch_urls)
+            batch_urls_reordered = []
 
             responses = []
             for request_type, request_urls in batch_request_urls.items():
+                batch_urls_reordered += request_urls
                 if request_type == "aiohttp-urls":
                     # Send asynchronous requests to the urls in the current batch
                     filtered_responses = asyncio.run(aiohttp_request(request_urls))
@@ -39,7 +41,7 @@ def run(urls, scraping_config, batch_size=10, batch_delay_seconds=5):
             # Prepare arguments for the scrape function
             scrape_args = [
                 (scraping_config[extract_website_name_from_url(url)], response, url)
-                for response, url in zip(responses, batch_urls)
+                for response, url in zip(responses, batch_urls_reordered)
             ]
 
             # Use ThreadPoolExecutor to parallelize the scraping task
@@ -102,7 +104,6 @@ def scrape_element_config_list(html, item_name, item_config, root_url):
         for config in element_config:
             if html is None:
                 return
-            
             html = scrape_element_config_item(html, config)
 
         if isinstance(html, list):
@@ -111,6 +112,7 @@ def scrape_element_config_list(html, item_name, item_config, root_url):
             scraped_data = {} 
         else:
             scraped_data[item_name] = extract_element_data(html, config.get("attr"), root_url)
+             
 
     except Exception as error:
         logger.error(error)
