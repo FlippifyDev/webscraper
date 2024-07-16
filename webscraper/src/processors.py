@@ -11,6 +11,25 @@ logger = logging.getLogger("SCRAPER")
 
 
 
+def filter_urls_by_website(urls):
+    all_urls = {}
+    tls_client_urls = []
+    aiohttp_urls = []
+
+    for url in urls:
+        website_name = extract_website_name_from_url(url)
+        if website_name in ["argos"]:
+            tls_client_urls.append(url)
+
+        else:
+            aiohttp_urls.append(url)
+
+    all_urls["aiohttp-urls"] = aiohttp_urls
+    all_urls["tls-client-urls"] = tls_client_urls
+
+    return all_urls
+
+
 def order_urls(urls, batch_size):
     """
     Order the urls as shown below, then creates a batch of these urls
@@ -147,6 +166,6 @@ def fix_url(url, root_url):
             )
         )
 
-    except Exception as e:
-        print(f"Error fixing URL: {e}")
+    except Exception as error:
+        logger.error(f"Couldn't fix ({url})", error)
         return base_url

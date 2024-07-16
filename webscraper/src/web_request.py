@@ -1,5 +1,6 @@
 from fake_headers import Headers
 
+import tls_client
 import logging
 import aiohttp
 import asyncio
@@ -43,6 +44,28 @@ async def check_response_status(status_code, url):
 
 
 
+async def tls_client_request(urls):
+    try:
+        with tls_client.Session(client_identifier="chrome112", random_tls_extension_order=True) as session:
+            tasks = [await tls_client_fetch(url, session) for url in urls]
+            return tasks
+
+    except Exception as error:
+        logger.error("Failed tls_client.Session()", error)
+
+
+async def tls_client_fetch(url, session):
+    try:
+        response = session.get(url, headers=headers())
+        status = response.status_code
+        if await check_response_status(status, url):
+            return response.content
+        return {"status": status}
+
+    except Exception as error:
+        logger.error(f"Failed request for ({url})", error)
+
+
 async def aiohttp_request(urls):
     """
     Create an aiohttp session and send requests asynchronously to each url
@@ -54,7 +77,7 @@ async def aiohttp_request(urls):
             return await asyncio.gather(*tasks)
         
     except Exception as error:
-        logger.error(error)
+        logger.error("Failed aiohttp.ClientSession()", error)
 
 
 
@@ -64,7 +87,7 @@ async def aiohttp_fetch(url, session) -> None:
 
     Args:
         url (str): URL to fetch.
-        session (aiohttp.ClientSession): Session for the HTTP GET request.
+        session (aiohttp.ClientSession | tls_client.Session): Session for the HTTP GET request.
     
     Returns:
         Response text on success, or HTTP status code on failure.

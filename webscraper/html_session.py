@@ -1,6 +1,6 @@
 # Local Imports
 from .src.processors import *
-from .src.web_request import aiohttp_request
+from .src.web_request import aiohttp_request, tls_client_request
 from .src.config_logger import setup_logger
 
 from bs4 import BeautifulSoup
@@ -24,8 +24,17 @@ def run(urls, scraping_config, batch_size=10, batch_delay_seconds=5):
             
             batch_urls = queue.pop()
             
-            # Send asynchronous requests to the urls in the current batch
-            responses = asyncio.run(aiohttp_request(batch_urls))
+            batch_request_urls = filter_urls_by_website(batch_urls)
+
+            responses = []
+            for request_type, request_urls in batch_request_urls.items():
+                if request_type == "aiohttp-urls":
+                    # Send asynchronous requests to the urls in the current batch
+                    filtered_responses = asyncio.run(aiohttp_request(request_urls))
+                elif request_type == "tls-client-urls":
+                    filtered_responses = asyncio.run(tls_client_request(request_urls))
+
+                responses += filtered_responses
 
             # Prepare arguments for the scrape function
             scrape_args = [
