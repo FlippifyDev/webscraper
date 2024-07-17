@@ -7,14 +7,23 @@ from bs4 import BeautifulSoup
 
 import concurrent.futures
 import asyncio
+import signal
 import time
 import copy
-
+import sys
 
 logger = setup_logger("SCRAPER", "bot")
 
 
+def signal_handler(sig, frame):
+    # Used to stop the scraping when pressing (CTRL+C)
+    logger.info("----- Look up terminated -----")
+    sys.exit(0)
+
+
+
 def run(urls, scraping_config, batch_size=10, batch_delay_seconds=5):
+    signal.signal(signal.SIGINT, signal_handler)
     queue = order_urls(urls, batch_size)
     results = {}
     try:
