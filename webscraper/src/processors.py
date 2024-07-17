@@ -18,7 +18,7 @@ def filter_urls_by_website(urls):
 
     for url in urls:
         website_name = extract_website_name_from_url(url)
-        if website_name in ["argos"]:
+        if website_name in ["argos", "ebay"]:
             tls_client_urls.append(url)
 
         else:
