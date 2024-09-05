@@ -1,3 +1,5 @@
+from .processors import fix_url, extract_base_url_from_url
+
 from urllib.parse import urlparse
 from fake_headers import Headers
 from yarl import URL
@@ -131,18 +133,23 @@ async def tls_client_request(urls):
 
 async def tls_client_fetch(url, session):
     try:
-        # Make request using tls_client, passing headers and cookies as needed
         response = session.get(url, headers=headers())
-        
-        # Handle response as needed
         status = response.status_code
+        
+        # Redirect: Send a request to the redirected url
+        if status in [302, 303]:
+            redirect_url = response.headers.get('Location')
+            if redirect_url:
+                root = extract_base_url_from_url(url)
+                redirect = fix_url(redirect_url, root)
+                return {"redirect": redirect}
+        
         if await check_response_status(status, url):
             return response.content
         return {"status": status}
     
     except Exception as error:
         logger.error("Failed request for (%s): %s", url, error)
-
 
 
 async def aiohttp_request(urls):
@@ -179,25 +186,22 @@ async def aiohttp_request(urls):
 
 
 async def aiohttp_fetch(url, session) -> None:
-    """
-    Asynchronously fetches content from a URL using aiohttp.
-
-    Args:
-        url (str): URL to fetch.
-        session (aiohttp.ClientSession): Session for the HTTP GET request.
-    
-    Returns:
-        Response text on success, or HTTP status code on failure.
-    """
     try:
         async with session.get(url, headers=headers(gen=True)) as response:
             status = response.status
+            
+            # Redirect: Send a request to the redirected url
+            if status in [302, 303]:
+                redirect_url = response.headers.get('Location')
+                if redirect_url:
+                    root = extract_base_url_from_url(url)
+                    redirect = fix_url(redirect_url, root)
+                    return {"redirect": redirect}
+            
             if await check_response_status(status, url):
                 try:
-                    # Attempt to get the content as text
                     content = await response.text()
                 except UnicodeDecodeError:
-                    # Fallback to getting the content as raw bytes if decoding fails
                     content = await response.read()
                 return content
             return {"status": status}

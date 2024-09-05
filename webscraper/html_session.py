@@ -80,7 +80,7 @@ def scrape(*args):
     try:
         # When a request has faild the status is returned
         if isinstance(response, dict):
-            scraped_data[url]["status"] = response.get("status")
+            scraped_data[url] = response
         else:
             # Parse the HTML content
             html = BeautifulSoup(response, "lxml")
@@ -105,7 +105,6 @@ def scrape(*args):
 
 def scrape_element_config_list(html, item_name, item_config, root_url):
     scraped_data = {}
-
     try:
         element_config = item_config.pop("element-config")
 
@@ -118,11 +117,10 @@ def scrape_element_config_list(html, item_name, item_config, root_url):
         if isinstance(html, list):
             scraped_data[item_name] = handle_multiple_elements(html, item_config, root_url)
         elif html is None:
-            scraped_data = {} 
+            scraped_data = {item_name: None} 
         else:
             scraped_data[item_name] = extract_element_data(html, config.get("attr"), root_url)
              
-
     except Exception as error:
         logger.error(error)
 
@@ -135,6 +133,7 @@ def scrape_element_config_item(html, config):
     try:
         # Get the number of tags to scrape
         max_elements = config.get("max")
+        element_index = config.get("element-index")
         
         # Get the parameters for the BeautifulSoup find methods
         soup_params = get_soup_params(config)
@@ -143,8 +142,12 @@ def scrape_element_config_item(html, config):
             # Scrape for a single item
             return html.find(*soup_params)
         else:
-            # Scrape for multiple items
-            return html.find_all(*soup_params, limit=max_elements)
+            if element_index is None:
+                # Scrape for multiple items
+                return html.find_all(*soup_params, limit=max_elements)
+            else:
+                # Return 
+                return html.find_all(*soup_params, limit=max_elements)[element_index]
 
     except Exception as error:
         logger.error(f"Config: {config} |", error) 
@@ -164,7 +167,6 @@ def handle_multiple_elements(html, item_config, root_url):
             for sub_item_name, sub_item_config in item_config_copy.items():
                 # Scrape data for each sub-item and update sub_item_data
                 sub_item_data.update(scrape_element_config_list(element, sub_item_name, sub_item_config, root_url))
-            
             # Append the scraped data for the current element to scraped_data list
             scraped_data.append(sub_item_data)
     
