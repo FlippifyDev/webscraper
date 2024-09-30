@@ -22,30 +22,23 @@ def signal_handler(sig, frame):
 
 
 
-def run(urls, scraping_config, batch_size=10, batch_delay_seconds=5):
+async def run_async(urls, scraping_config, batch_size=10, batch_delay_seconds=5):
+    """Main function to process all batches asynchronously."""
     signal.signal(signal.SIGINT, signal_handler)
+    
     queue = order_urls(urls, batch_size)
     results = {}
+    
     try:
-        # Process each batch of urls until the queue is empty
+        # Process each batch of URLs until the queue is empty
         while queue.length > 0:
             logger.info(f"Batch {queue.batch_number}/{queue.size}")
             
             batch_urls = queue.pop()
-            
             batch_request_urls = filter_urls_by_website(batch_urls)
-            batch_urls_reordered = []
 
-            responses = []
-            for request_type, request_urls in batch_request_urls.items():
-                batch_urls_reordered += request_urls
-                if request_type == "aiohttp-urls":
-                    # Send asynchronous requests to the urls in the current batch
-                    filtered_responses = asyncio.run(aiohttp_request(request_urls))
-                elif request_type == "tls-client-urls":
-                    filtered_responses = asyncio.run(tls_client_request(request_urls))
-
-                responses += filtered_responses
+            # Process the batch of URLs asynchronously
+            responses, batch_urls_reordered = await process_batch(batch_request_urls)
 
             # Prepare arguments for the scrape function
             scrape_args = [
@@ -63,13 +56,38 @@ def run(urls, scraping_config, batch_size=10, batch_delay_seconds=5):
 
             # Introduce a delay between processing batches
             if queue.length > 0:
-                time.sleep(batch_delay_seconds)
+                await asyncio.sleep(batch_delay_seconds)
 
+    except KeyboardInterrupt:
+        logger.info("Process interrupted by user.")
     except Exception as error:
-        logger.error(error)
-    
+        logger.error(f"Error occurred: {error}")
     finally:
         return results
+
+def run(urls, scraping_config, batch_size=10, batch_delay_seconds=5):
+    """Wrapper function to run the asynchronous main function."""
+    # Use asyncio.run to run the async event loop
+    return asyncio.run(run_async(urls, scraping_config, batch_size, batch_delay_seconds))
+
+
+
+async def process_batch(batch_request_urls):
+    """Process a batch of URLs asynchronously."""
+    responses = []
+    batch_urls_reordered = []
+    
+    for request_type, request_urls in batch_request_urls.items():
+        batch_urls_reordered += request_urls
+        if request_type == "aiohttp-urls":
+            # Send asynchronous requests to the URLs in the current batch
+            filtered_responses = await aiohttp_request(request_urls)
+        elif request_type == "tls-client-urls":
+            filtered_responses = await tls_client_request(request_urls)
+
+        responses += filtered_responses
+
+    return responses, batch_urls_reordered
 
 
 
@@ -119,8 +137,8 @@ def scrape_element_config_list(html, item_name, item_config, root_url):
         elif html is None:
             scraped_data = {item_name: None} 
         else:
-            scraped_data[item_name] = extract_element_data(html, config.get("attr"), root_url)
-             
+            scraped_data[item_name] = extract_element_data(html, config.get("attr"), root_url, config.get("alt-attr"))
+
     except Exception as error:
         logger.error(error)
 
@@ -178,7 +196,7 @@ def handle_multiple_elements(html, item_config, root_url):
 
 
 
-def extract_element_data(html, attribute, root_url):
+def extract_element_data(html, attribute, root_url, alt_attribute=None):
     try:
         # Extract text content if attribute is ".text"
         if attribute == ".text":
@@ -191,6 +209,10 @@ def extract_element_data(html, attribute, root_url):
         # Return the value of the specified attribute
         else:
             return html[attribute]
+    
+    except KeyError:
+        if alt_attribute is not None:
+            return extract_element_data(html, alt_attribute, root_url)
 
     except Exception as error:
         logger.error(f"Attr: {attribute} | html: {html} |", error) 
